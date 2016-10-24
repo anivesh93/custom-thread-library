@@ -1,87 +1,78 @@
-#include <malloc.h>
-#include <stdio.h>
-#include <signal.h>
 #include <ucontext.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
-// 64 KB Stack Memory
-#define MEM 64 * 1024
-#define LEVELS 4
-#define QUANTUM (50/1000) * 1000000
-#define THRESHOLD 50
-#define AGE_TH 50 * (50/1000) * 1000000
+#define NUM_THREADS 15
+//Stack size of each thread : 16 bytes
+#define MEM 16384
+#define LEVELS 16
+//Quantum duration : 50 ms
+#define QUANTUM 50000
+//Check for starvation every 50 quanta
+#define STARVATION_THRESHOLD 50
 
-ucontext_t p,c;
-
-typedef struct 
-{
-	long int id;
-	ucontext_t uc;
-	void *retval;
-	struct mypthread_t * next;
-	state thread_state;
-	int num_runs;
-	int running_time;
-	int priority;
-	long int start_time;
-	long int first_exe_tt;
-	long int last_exe_tt;
-	long int end_tt;
-} my_pthread_t;
-
-typedef enum 
+//Thread states
+typedef enum state 
 {
 	READY, RUNNING, WAITING, YIELDED, FINISHED
 } state;
 
-typedef struct
+//Thread structure 
+typedef struct my_pthread_t 
 {
-	struct node *front;
-	struct node *rear;
+	ucontext_t uc;
+	struct my_pthread_t *next;
+	state thread_state;
+	long int id;
+	int running_time;
+	int priority;
+	void *return_val;
+	long int last_exec_time;
+} my_pthread_t;
+
+//Queue structure
+typedef struct 
+{
+	my_pthread_t *front;
+	my_pthread_t *rear;
 	int ctr;
 } queue;
 
+//Mutex structure
 typedef struct 
 {
-	queue *mlfq;
-	queue *wait;
-	int number_of_threads;
-	my_pthread_t *current_thread;
-	my_pthread_t *main_thread;
-} scheduler;
-
-typedef struct 
-{
-	my_pthread_t *caller;
-	queue *wait;
+  int lock;                            
+  my_pthread_t *owner;
+  queue *wait;
 } my_pthread_mutex_t;
 
+//Queue functions
 void queue_init(queue *q);
-
 void enqueue(queue *q, my_pthread_t *thread);
+my_pthread_t* dequeue(queue *q);
 
-my_pthread_t* dequeue(queue *q)
-
-void my_pthread_init(long period);
-
-int my_pthread_create(my_pthread_t *thread, pthread_attr_t *attr, void *(*function)(void*), void *arg);
-
+//my_pthread functions
+int my_pthread_create(my_pthread_t* thread, pthread_attr_t* attr, void *(*function)(void *), void* arg);
 void my_pthread_yield();
+void my_pthread_exit(void* value_ptr);
+int my_pthread_join(my_pthread_t* thread, void** value_ptr);
 
-void pthread_exit(void *value_ptr);
+//Mutex functions
+int my_pthread_mutex_init(my_pthread_mutex_t* mutex, const pthread_mutexattr_t* mutexattr);
+int my_pthread_mutex_lock(my_pthread_mutex_t* mutex);
+int my_pthread_mutex_unlock(my_pthread_mutex_t* mutex);
+int my_pthread_mutex_destroy(my_pthread_mutex_t* mutex);
 
-int my_pthread_join(pthread_t thread, void **value_ptr);
+void my_pthread_runner(my_pthread_t* thr_node, void *(*f)(void *), void* arg); //Wrapper function to execute functions in threads
 
-typedef struct {
-	//Locked = 1; Unlocked = 0
-	int lock; 
-} my_pthread_mutex_t;
+//Scheduler functions
+void scheduler_init();
+void scheduler();
+void scheduler_add_thread(my_pthread_t* thr_node, int priority);
+my_pthread_t* scheduler_get_next_thread();
 
-int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr);
-
-int my_pthread_mutex_lock(my_pthread_mutex_t *mutex);
-
-int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
-
-int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
-
-long int time_stamp()
+long int time_stamp();
